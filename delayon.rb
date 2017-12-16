@@ -129,7 +129,6 @@ get '/delay/:year/:month/:day/:train/:station' do
   trainno = data['trainCategory'] + " " + data['trainNumber']
   pa = if !data['planned'].nil?
          data['planned']['arrival']
-       else
          data['changed']['arrival']
        end
   parrival = Time.new(pa[0],pa[1],pa[2],pa[3],pa[4])
@@ -138,7 +137,7 @@ get '/delay/:year/:month/:day/:train/:station' do
   delay = ((carrival - parrival) / 60).ceil
 
   now = Time.now.iso8601
-  delayid = Digest::SHA256.hexdigest(now + evaid + trainno + rand(100).to_s)
+  delayid = Digest::SHA256.hexdigest("#{now}#{evaid}#{trainno}#{rand(100)}")
   delayid.upcase!
   delayid = delayid[0...6]
 

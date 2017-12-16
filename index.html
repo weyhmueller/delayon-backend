@@ -1,0 +1,44 @@
+<html>
+<head>
+    <title>Verspätungsbescheinigung</title>
+    <style type="text/css">
+        label {width: 100px; display: inline-block;}
+    </style>
+    <script type="application/javascript">
+        function test1() {
+            var datum = document.forms["testform_create"]["date"].value;
+            var train = document.forms["testform_create"]["train"].value;
+            var bf = document.forms["testform_create"]["bf"].value;
+
+            var year = datum.substr(6,4);
+            var month = datum.substr(3,2);
+            var day = datum.substr(0,2);
+
+            var url = "http://delayon.nodoma.in:8000/delay/" + year + "/" + month + "/" + day + "/" + train + "/" + bf + "?pdf=true";
+
+            location.href = url;
+        }
+        function test2() {
+            var delayid = document.forms["testform_get"]["delayid"].value;
+
+            var url = "http://delayon.nodoma.in:8000/pdf/" + delayid;
+
+            location.href = url;
+        }
+    </script>
+</head>
+<body>
+<form name="testform_create">
+    <label for="date">Datum</label><input type="text" name="date" value="16.12.2017"/><br />
+    <label for="train">Zug</label><input type="text" name="train" value = "593"/><br />
+    <label for="bf">Bahnhof</label><input type="text" name="bf" value="Frankfurt (Main) Hbf"/><br />
+    <input type="button" name="button1" value="Senden" onclick="test1()">
+</form>
+<br />
+<br />
+<form name="testform_get">
+    <label for="delayid">ID</label><input type="text" name="delayid" value=""/><br />
+    <input type="button" name="button2" value="Senden" onclick="test2()">
+</form>
+</body>
+</html>
