@@ -154,7 +154,7 @@ end
 
 def make_pdf(delay, delayid, stationname, train, delaydate)
 
-  delaydatetext = " am " + Time.parse(delaydate).strftime('%d.%m.%Y')
+  delaydatetext = "am " + Time.parse(delaydate).strftime('%d.%m.%Y')
   delaytext = " keine "
   delaytext =  " #{delay.to_i} Minuten " if delay.to_i > 0
   pdffile = Prawn::Document.new do |pdf|
@@ -175,6 +175,48 @@ def make_pdf(delay, delayid, stationname, train, delaydate)
     pdf.move_down 40
     pdf.text "ID: #{delayid}, Auskunft erstellt am: #{now.strftime('%d.%m.%Y um %H:%M:%S')}"
 
+  end
+end
+
+get '/db/:year/:month/:day/:type/:train/:station/:delay' do
+  evaid = string2eva(params[:station])
+  day = params[:day]
+  month = params[:month]
+  year = params[:year]
+  delay = params[:delay]
+
+  train = params[:type] + " " + params[:train]
+  trainno = train.gsub(/[^0-9]/, '')
+  now = Time.now.iso8601
+  delayid = Digest::SHA256.hexdigest(now + evaid + trainno + rand(100).to_s)
+  delayid.upcase!
+  delayid = delayid[0...6]
+
+  dynamodb = Aws::DynamoDB::Client.new(region: 'eu-central-1')
+  item = {
+    delayid: delayid,
+    delay: delay,
+    delaydate: Date.parse("#{year}-#{month}-#{day}").to_s,
+    station: evaid,
+    train: train
+  }
+  dbparams = {
+    table_name: 'DBHackathon8Delay',
+    item: item
+  }
+
+  begin
+    result = dynamodb.put_item(dbparams)
+
+  rescue  Aws::DynamoDB::Errors::ServiceError => error
+    puts 'Unable to add:'
+    puts error.message
+  end
+  if params[:pdf]
+    redirect( '/pdf/' + delayid)
+  else
+    content_type :json
+    { delayid: delayid }.to_json
   end
 end
 
