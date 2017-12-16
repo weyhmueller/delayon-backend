@@ -65,9 +65,51 @@ def string2eva(station)
   stationid
 end
 
+def make_pdf(delay, delayid, stationname, train, delaydate)
+
+  delaydatetext = "am " + Time.parse(delaydate).strftime('%d.%m.%Y')
+  delaytext = " keine "
+  delaytext =  " #{delay.to_i} Minuten " if delay.to_i > 0
+  pdffile = Prawn::Document.new do |pdf|
+    now = Time.now
+    pdf.image "logo.png", :at => [450, 720], scale: 0.8
+    pdf.move_down 10
+    pdf.formatted_text [text: 'Verspätungsbescheinigung', size: 20]
+    pdf.move_down 30
+    pdf.text "Sehr geehrter Kunde,"
+    pdf.move_down 20
+    pdf.formatted_text [
+                         {text: 'Bei Fahrt mit ', styles: []},
+                         {text: train.to_s, styles: [:bold]},
+                         {text: ' ', styles: []},
+                         {text: delaydatetext, styles: [:bold]},
+                         {text: ' ist bei der Ankunft in ', styles: []},
+                         {text: stationname.to_s, styles: [:bold]},
+                         {text: ' eine Verspätung von ', styles: []},
+                         {text: "#{delaytext}", :styles => [:bold]},
+                         {text: ' aufgetreten.', styles: []}
+    ]
+    pdf.move_down 20
+    pdf.text "Wir bitten um Entschuldigung."
+    pdf.move_down 20
+    pdf.text "Mit freundlichen Grüßen"
+    pdf.move_down 20
+    pdf.text "Deutsche Bahn AG"
+    pdf.text "Kundendialog"
+    pdf.move_down 40
+    pdf.text "Auskunfts-ID: #{delayid}, Auskunft erstellt am: #{now.strftime('%d.%m.%Y um %H:%M:%S')}"
+    pdf.move_down 10
+    pdf.text "Disclaimer:"
+    pdf.text "Dieses Dokument wurde im Rahmen des 8. DB Hackathon: Open Data am 15. & 16.12.2017 in Berlin erstellt. Dies ist KEIN offizielles Dokument der Deutschen Bahn AG oder ihrer Tochterunternehmen"
+    pdf.move_down 10
+    pdf.text "This Document has been created during the 8th DB Hackathon: Open Data on 15. & 16.12.2017 in Berlin. This is NOT an official Document of Deutsche Bahn AG or its subsidiaries."
+
+
+  end
+end
+
 set :bind, @@config['listen']
 set :port, @@config['port']
-
 
 get '/' do
   'Hello world!'
@@ -129,16 +171,11 @@ get '/delay/:year/:month/:day/:train/:station' do
 end
 
 get '/delay/:train/:station' do
-  evaid = string2eva(params[:station])
   day = Time.now.day
   month = Time.now.month
   year = Time.now.year
 
-  train = params[:train]
-  trainno = train.gsub(/[^0-9]/, '')
-  #puts "http://<base-url>/prod/#{year}/#{month}/#{day}/#{trainno}/#{evaid}"
-  data = get_from_api(year,month,day,trainno,evaid)
- #pp data
+ redirect "/delay/#{year}/#{month}/#{day}/#{params[:train]}/#{params[:station]}"
 
 end
 
@@ -152,31 +189,7 @@ def get_from_api(year,month,day,train,evaid)
   jsondata
 end
 
-def make_pdf(delay, delayid, stationname, train, delaydate)
 
-  delaydatetext = "am " + Time.parse(delaydate).strftime('%d.%m.%Y')
-  delaytext = " keine "
-  delaytext =  " #{delay.to_i} Minuten " if delay.to_i > 0
-  pdffile = Prawn::Document.new do |pdf|
-    now = Time.now
-    pdf.image "logo.png", :at => [450, 720], scale: 0.8
-    pdf.move_down 10
-    pdf.formatted_text [text: 'Verspätungsbescheinigung', size: 20]
-    pdf.move_down 30
-    pdf.formatted_text [
-                         {text: train.to_s, styles: [:bold]},
-                         {text: ' hatte ', styles: []},
-                         {text: delaydatetext, styles: [:bold]},
-                         {text: ' im Bahnhof ', styles: []},
-                         {text: stationname.to_s, styles: [:bold]},
-                         {text: "#{delaytext}", :styles => [:bold]},
-                         {text: "Verspätung.", styles: []}
-                       ]
-    pdf.move_down 40
-    pdf.text "ID: #{delayid}, Auskunft erstellt am: #{now.strftime('%d.%m.%Y um %H:%M:%S')}"
-
-  end
-end
 
 get '/db/:year/:month/:day/:type/:train/:station/:delay' do
   evaid = string2eva(params[:station])
@@ -218,46 +231,6 @@ get '/db/:year/:month/:day/:type/:train/:station/:delay' do
     content_type :json
     { delayid: delayid }.to_json
   end
-end
-
-get '/pdf/:train/:station/:delay' do
-  # create pdf and save data to DB
-
-  stationname = eva2string(params[:station])
-  stationid = params[:station]
-  train = params[:train]
-  delay = params[:delay]
-
-  #save information to db
-  now = Time.now.iso8601
-  delayid = Digest::SHA256.hexdigest(now + params[:station] + params[:train] + rand(100).to_s)
-  delayid.upcase!
-  delayid = delayid[0...6]
-
-  dynamodb = Aws::DynamoDB::Client.new(region: 'eu-central-1')
-  item = {
-    delayid: delayid,
-    delay: params[:delay].to_i,
-    station: stationid,
-    train: params[:train]
-  }
-  params = {
-    table_name: 'DBHackathon8Delay',
-    item: item
-  }
-
-  begin
-    result = dynamodb.put_item(params)
-
-  rescue  Aws::DynamoDB::Errors::ServiceError => error
-    puts 'Unable to add:'
-    puts error.message
-  end
-
-  pdffile = make_pdf(delay, delayid, stationname, train)
-  x = pdffile.render
-  attachment('test.pdf','application/pdf')
-  x
 end
 
 get '/pdf/:id' do
