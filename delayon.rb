@@ -112,7 +112,7 @@ set :bind, @@config['listen']
 set :port, @@config['port']
 
 get '/' do
-  'Hello world!'
+  File.read('index.html')
 end
 
 get '/delay/:year/:month/:day/:train/:station' do
