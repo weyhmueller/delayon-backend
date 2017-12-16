@@ -127,14 +127,19 @@ get '/delay/:year/:month/:day/:train/:station' do
   data = get_from_api(year,month,day,trainno,evaid)
 
   trainno = data['trainCategory'] + " " + data['trainNumber']
-  pa = if !data['planned'].nil?
-         data['planned']['arrival']
-         data['changed']['arrival']
-       end
+  pa = data['planned']['arrival']
   parrival = Time.new(pa[0],pa[1],pa[2],pa[3],pa[4])
-  ca = data['changed']['arrival']
+  ca= if !data['changed'].nil?
+         data['changed']['arrival']
+       else
+         data['planned']['arrival']
+       end
+  #ca = data['changed']['arrival']
   carrival = Time.new(ca[0],ca[1],ca[2],ca[3],ca[4])
+  puts parrival
+  puts carrival
   delay = ((carrival - parrival) / 60).ceil
+  puts delay
 
   now = Time.now.iso8601
   delayid = Digest::SHA256.hexdigest("#{now}#{evaid}#{trainno}#{rand(100)}")
