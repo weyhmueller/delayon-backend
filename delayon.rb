@@ -58,6 +58,10 @@ def string2eva(station)
   stationid
 end
 
+set :bind, @@config['listen']
+set :port, @@config['port']
+
+
 get '/' do
   'Hello world!'
 end
