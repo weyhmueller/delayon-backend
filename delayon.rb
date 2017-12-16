@@ -16,6 +16,7 @@ Aws::DynamoDB::Client.new(
   secret_access_key: @@config['aws']['secret'],
   region: @@config['aws']['region']
 )
+puts @@config['aws']['key'] + " / " + @@config['aws']['secret']
 Prawn::Font::AFM.hide_m17n_warning = true
 
 def eva2string(eva)
@@ -42,7 +43,7 @@ def string2eva(station)
     #get eva from station name
     request = HTTPI::Request.new
     request.url = 'https://api.deutschebahn.com/stada/v2/stations'
-    request.headers["Authorization"] = "Bearer 99a09b10397ccac09251f15a90301185"
+    request.headers["Authorization"] = "Bearer "+ @@config['token']
     request.headers["Accept"] = "application/json"
     request.query = {:searchstring => station}
 
