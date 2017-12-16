@@ -9,12 +9,11 @@ require 'digest'
 require 'aws-sdk'
 
 configfile = File.read('settings.json')
-config = JSON.parse(configfile)
-
+@@config = JSON.parse(configfile)
 
 Aws::DynamoDB::Client.new(
-  access_key_id: config['aws']['key'],
-  secret_access_key: config['aws']['secret']
+  access_key_id: @@config['aws']['key'],
+  secret_access_key: @@config['aws']['secret']
 )
 Prawn::Font::AFM.hide_m17n_warning = true
 
@@ -23,7 +22,7 @@ def eva2string(eva)
     #get station from eva-id
     request = HTTPI::Request.new
     request.url = 'https://api.deutschebahn.com/stada/v2/stations'
-    request.headers["Authorization"] = "Bearer " + config['token']"
+    request.headers["Authorization"] = "Bearer " + @@config['token']
     request.headers["Accept"] = "application/json"
     request.query = {:eva => "#{eva}"}
 
@@ -108,7 +107,7 @@ get '/delay/:year/:month/:day/:train/:station' do
     puts 'Unable to add:'
     puts error.message
   end
-  delayid
+  redirect( '/pdf/' + delayid)
 end
 
 get '/delay/:train/:station' do
