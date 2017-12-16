@@ -257,7 +257,7 @@ get '/pdf/:id' do
     #pp result.item['train']
 
 
-    stationname = eva2string(result.item['station'])
+    stationname = eva2string(result.item['station'].to_i.to_s)
 
     pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'], result.item['delaydate'])
 
