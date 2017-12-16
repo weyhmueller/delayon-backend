@@ -104,22 +104,28 @@ get '/delay/:year/:month/:day/:train/:station' do
   item = {
     delayid: delayid,
     delay: delay,
+    delaydate: carrival.to_s,
     station: evaid,
     train: trainno
   }
-  params = {
+  dbparams = {
     table_name: 'DBHackathon8Delay',
     item: item
   }
 
   begin
-    result = dynamodb.put_item(params)
+    result = dynamodb.put_item(dbparams)
 
   rescue  Aws::DynamoDB::Errors::ServiceError => error
     puts 'Unable to add:'
     puts error.message
   end
-  redirect( '/pdf/' + delayid)
+  if params[:pdf]
+    redirect( '/pdf/' + delayid)
+  else
+    content_type :json
+    { delayid: delayid }.to_json
+  end
 end
 
 get '/delay/:train/:station' do
@@ -146,18 +152,22 @@ def get_from_api(year,month,day,train,evaid)
   jsondata
 end
 
-def make_pdf(delay, delayid, stationname, train)
+def make_pdf(delay, delayid, stationname, train, delaydate)
 
+  delaydatetext = " am " + Time.parse(delaydate).strftime('%d.%m.%Y')
   delaytext = " keine "
   delaytext =  " #{delay.to_i} Minuten " if delay.to_i > 0
   pdffile = Prawn::Document.new do |pdf|
     now = Time.now
     pdf.image "logo.png", :at => [450, 720], scale: 0.8
+    pdf.move_down 10
     pdf.formatted_text [text: 'Verspätungsbescheinigung', size: 20]
-    pdf.move_down 20
+    pdf.move_down 30
     pdf.formatted_text [
                          {text: train.to_s, styles: [:bold]},
-                         {text: ' hatte im Bahnhof ', styles: []},
+                         {text: ' hatte ', styles: []},
+                         {text: delaydatetext, styles: [:bold]},
+                         {text: ' im Bahnhof ', styles: []},
                          {text: stationname.to_s, styles: [:bold]},
                          {text: "#{delaytext}", :styles => [:bold]},
                          {text: "Verspätung.", styles: []}
@@ -235,7 +245,7 @@ get '/pdf/:id' do
 
     stationname = eva2string(result.item['station'])
 
-    pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'])
+    pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'], result.item['delaydate'])
 
     x = pdffile.render
     attachment('test.pdf','application/pdf')
