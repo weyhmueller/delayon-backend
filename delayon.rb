@@ -26,7 +26,7 @@ Aws.config.update({
 Prawn::Font::AFM.hide_m17n_warning = true
 
 def eva2string(eva)
-  if eva.start_with? '8'
+  if eva.to_s.start_with? '8'
     #get station from eva-id
     request = HTTPI::Request.new
     request.url = 'https://api.deutschebahn.com/stada/v2/stations'
