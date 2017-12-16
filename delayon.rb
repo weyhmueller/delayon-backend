@@ -57,7 +57,7 @@ def string2eva(station)
     jsondata = JSON.parse(response.body)
     #pp jsondata
     if jsondata['total'] == 1
-      stationid = jsondata["result"][0]["evaNumbers"][0]["number"]
+      stationid = jsondata["result"][0]["evaNumbers"][0]["number"].to_i.to_s
     end
   else
     stationid = station
