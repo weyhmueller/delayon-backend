@@ -13,7 +13,8 @@ configfile = File.read('settings.json')
 
 Aws::DynamoDB::Client.new(
   access_key_id: @@config['aws']['key'],
-  secret_access_key: @@config['aws']['secret']
+  secret_access_key: @@config['aws']['secret'],
+  region: @@config['aws']['region']
 )
 Prawn::Font::AFM.hide_m17n_warning = true
 
