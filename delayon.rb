@@ -17,6 +17,12 @@ Aws::DynamoDB::Client.new(
   region: @@config['aws']['region']
 )
 puts @@config['aws']['key'] + " / " + @@config['aws']['secret']
+
+Aws.config.update({
+                    region: 'eu-central-1',
+                    credentials: Aws::Credentials.new(@@config['aws']['key'], @@config['aws']['secret'])
+                  })
+
 Prawn::Font::AFM.hide_m17n_warning = true
 
 def eva2string(eva)
