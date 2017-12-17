@@ -8,6 +8,11 @@ require 'json'
 require 'digest'
 require 'aws-sdk'
 
+PUNCTUALLY = 0
+DELAYED = 1
+CANCELLED = 2
+UNKNOWN = 4
+
 configfile = File.read('settings.json')
 @@config = JSON.parse(configfile)
 
@@ -65,7 +70,7 @@ def string2eva(station)
   stationid
 end
 
-def make_pdf(delay, delayid, stationname, train, delaydate)
+def make_pdf(delay, delayid, stationname, train, delaydate, state)
 
   delaydatetext = "am " + Time.parse(delaydate).strftime('%d.%m.%Y')
   delaytext = " keine "
@@ -78,19 +83,41 @@ def make_pdf(delay, delayid, stationname, train, delaydate)
     pdf.move_down 30
     pdf.text "Sehr geehrter Kunde,"
     pdf.move_down 20
-    pdf.formatted_text [
-                         {text: 'Bei Fahrt mit ', styles: []},
-                         {text: train.to_s, styles: [:bold]},
-                         {text: ' ', styles: []},
-                         {text: delaydatetext, styles: [:bold]},
-                         {text: ' ist bei der Ankunft in ', styles: []},
-                         {text: stationname.to_s, styles: [:bold]},
-                         {text: ' eine Verspätung von ', styles: []},
-                         {text: "#{delaytext}", :styles => [:bold]},
-                         {text: ' aufgetreten.', styles: []}
-    ]
-    pdf.move_down 20
-    pdf.text "Wir bitten um Entschuldigung."
+    case state
+      when DELAYED
+        pdf.formatted_text [
+                             {text: 'bei Ihrer Fahrt mit ', styles: []},
+                             {text: train.to_s, styles: [:bold]},
+                             {text: ' ', styles: []},
+                             {text: delaydatetext, styles: [:bold]},
+                             {text: ' ist bei der Ankunft in ', styles: []},
+                             {text: stationname.to_s, styles: [:bold]},
+                             {text: ' eine Verspätung von ', styles: []},
+                             {text: "#{delaytext}", :styles => [:bold]},
+                             {text: ' aufgetreten.', styles: []}
+                           ]
+        pdf.move_down 20
+        pdf.text "Wir bitten um Entschuldigung."
+      when PUNCTUALLY
+        pdf.formatted_text [
+                             {text: 'bei Ihrer Fahrt mit ', styles: []},
+                             {text: train.to_s, styles: [:bold]},
+                             {text: ' ', styles: []},
+                             {text: delaydatetext, styles: [:bold]},
+                             {text: ' ist bei der Ankunft in ', styles: []},
+                             {text: stationname.to_s, styles: [:bold]},
+                             {text: ' keine Verspätung', styles: []},
+                             {text: ' aufgetreten.', styles: []}
+                           ]
+      when UNKNOWN
+        pdf.formatted_text [
+                             {text: 'zu Ihrer Fahrt mit ', styles: []},
+                             {text: train.to_s, styles: [:bold]},
+                             {text: ' ', styles: []},
+                             {text: delaydatetext, styles: [:bold]},
+                             {text: ' liegen uns leider keine Verspätungsdaten mehr vor.', styles: []}
+                           ]
+    end
     pdf.move_down 20
     pdf.text "Mit freundlichen Grüßen"
     pdf.move_down 20
@@ -125,24 +152,33 @@ get '/delay/:year/:month/:day/:train/:station' do
   trainno = train.gsub(/[^0-9]/, '')
   puts "http://<base-url>/prod/#{year}/#{month}/#{day}/#{trainno}/#{evaid}"
   data = get_from_api(year,month,day,trainno,evaid)
-
-  trainno = data['trainCategory'] + " " + data['trainNumber']
-  pa = data['planned']['arrival']
-  parrival = Time.new(pa[0],pa[1],pa[2],pa[3],pa[4])
-  ca= if !data['changed'].nil?
-         data['changed']['arrival']
-       else
-         data['planned']['arrival']
+  if data['date'].nil?
+    # no data in json (unknown)
+    state = UNKNOWN
+  else
+    train = data['trainCategory'] + " " + data['trainNumber']
+    pa = data['planned']['arrival']
+    parrival = Time.new(pa[0],pa[1],pa[2],pa[3],pa[4])
+    ca= if !data['changed'].nil?
+           data['changed']['arrival']
+        else
+           data['planned']['arrival']
        end
-  #ca = data['changed']['arrival']
-  carrival = Time.new(ca[0],ca[1],ca[2],ca[3],ca[4])
-  puts parrival
-  puts carrival
-  delay = ((carrival - parrival) / 60).ceil
-  puts delay
+    #ca = data['changed']['arrival']
+    carrival = Time.new(ca[0],ca[1],ca[2],ca[3],ca[4])
+    puts parrival
+    puts carrival
+    delay = ((carrival - parrival) / 60).ceil
+    if delay != 0
+      state = DELAYED
+    else
+      state = PUNCTUALLY
+    end
+    puts delay
 
+  end
   now = Time.now.iso8601
-  delayid = Digest::SHA256.hexdigest("#{now}#{evaid}#{trainno}#{rand(100)}")
+  delayid = Digest::SHA256.hexdigest("#{now}#{evaid}#{train}#{rand(100)}")
   delayid.upcase!
   delayid = delayid[0...6]
 
@@ -152,7 +188,8 @@ get '/delay/:year/:month/:day/:train/:station' do
     delay: delay,
     delaydate: carrival.to_s,
     station: evaid,
-    train: trainno
+    train: train,
+    state: state.to_s
   }
   dbparams = {
     table_name: 'DBHackathon8Delay',
@@ -202,6 +239,12 @@ get '/db/:year/:month/:day/:type/:train/:station/:delay' do
   year = params[:year]
   delay = params[:delay]
 
+  if delay.to_i > 0
+    state = :delayed
+  else
+    state = :punctually
+  end
+
   train = params[:type] + " " + params[:train]
   trainno = train.gsub(/[^0-9]/, '')
   now = Time.now.iso8601
@@ -215,7 +258,8 @@ get '/db/:year/:month/:day/:type/:train/:station/:delay' do
     delay: delay,
     delaydate: Date.parse("#{year}-#{month}-#{day}").to_s,
     station: evaid,
-    train: train
+    train: train,
+    state: state
   }
   dbparams = {
     table_name: 'DBHackathon8Delay',
@@ -253,18 +297,22 @@ get '/pdf/:id' do
   begin
     result = dynamodb.get_item(params1)
 
-    if result.item == nil
+    if result.item.nil?
       puts 'Could not find delay'
       halt 404
       #exit 0
-    else
 
+      if result.item['state'].nil?
+        state = DELAYED
+      else
+        state = result.item['state']
+      end
     #pp result.item['train']
 
 
     stationname = eva2string(result.item['station'].to_i.to_s)
 
-    pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'], result.item['delaydate'])
+    pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'], result.item['delaydate'],state)
 
     x = pdffile.render
     attachment('test.pdf','application/pdf')
