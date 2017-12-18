@@ -1,3 +1,4 @@
+# encoding: utf-8
 # delayon.rb
 
 require 'sinatra'
@@ -11,7 +12,10 @@ require 'aws-sdk'
 PUNCTUALLY = 0
 DELAYED = 1
 CANCELLED = 2
+PROGNOSED = 3
 UNKNOWN = 4
+
+INFINITY = +1.0/0.0
 
 configfile = File.read('settings.json')
 @@config = JSON.parse(configfile)
@@ -70,53 +74,56 @@ def string2eva(station)
   stationid
 end
 
-def make_pdf(delay, delayid, stationname, train, delaydate, state)
-
-  delaydatetext = "am " + Time.parse(delaydate).strftime('%d.%m.%Y')
-  delaytext = " keine "
-  delaytext =  " #{delay.to_i} Minuten " if delay.to_i > 0
+def make_pdf(delay, delayid, stationname, train, delaydate, delaystate, timestamp)
+  sorry = false
+  ddate = Time.parse(delaydate)
+  delaydatetext = ddate.strftime('%d.%m.%Y')
+  delaydatetime = ddate.strftime('%H:%M')
+  delaytext =  "#{delay.to_i} Minuten"
   pdffile = Prawn::Document.new do |pdf|
-    now = Time.now
+    now = Time.at(timestamp)
     pdf.image "logo.png", :at => [450, 720], scale: 0.8
     pdf.move_down 10
-    pdf.formatted_text [text: 'Verspätungsbescheinigung', size: 20]
+    pdf.formatted_text [text: 'Bescheinigung über Zugverspätung', size: 20] if delaystate != PROGNOSED
+    pdf.formatted_text [text: 'Verspätungsprognose', size: 20] if delaystate == PROGNOSED
+    pdf.formatted_text [text: 'Bescheinigung über Zugausfall', size: 20] if delaystate == CANCELLED
+
     pdf.move_down 30
     pdf.text "Sehr geehrter Kunde,"
     pdf.move_down 20
-    case state
+    case delaystate
       when DELAYED
-        pdf.formatted_text [
-                             {text: 'bei Ihrer Fahrt mit ', styles: []},
-                             {text: train.to_s, styles: [:bold]},
-                             {text: ' ', styles: []},
-                             {text: delaydatetext, styles: [:bold]},
-                             {text: ' ist bei der Ankunft in ', styles: []},
-                             {text: stationname.to_s, styles: [:bold]},
-                             {text: ' eine Verspätung von ', styles: []},
-                             {text: "#{delaytext}", :styles => [:bold]},
-                             {text: ' aufgetreten.', styles: []}
-                           ]
-        pdf.move_down 20
-        pdf.text "Wir bitten um Entschuldigung."
+        pdf.text "bei Ihrer Fahrt mit <b>#{train}</b> am <b>#{delaydatetext}</b> nach <b>#{stationname}</b>," +
+                 " planmäßige Ankunft dort um <b>#{delaydatetime} Uhr</b>, ist <b>eine Verspätung von #{delaytext}</b> aufgetreten.",
+                 inline_format: true
+        sorry = true
+      when PROGNOSED
+        pdf.text "bei Ihrer Fahrt mit <b>#{train}</b> am <b>#{delaydatetext}</b> nach <b>#{stationname}</b>," +
+                   " planmäßige Ankunft dort um <b>#{delaydatetime} Uhr</b>, erwarten wir <b>eine Verspätung von #{delaytext}</b>. " +
+                   "Diese Auskunft ist unverbindlich",
+                 inline_format: true
+      when CANCELLED
+        pdf.text "leider ist die Fahrt mit <b>#{train}</b> am <b>#{delaydatetext}</b> nach <b>#{stationname}</b>," +
+                   " planmäßige Ankunft dort um <b>#{delaydatetime} Uhr</b>, <b>ausfgefallen</b>. " +
+                   "Diese Auskunft ist unverbindlich",
+                 inline_format: true
       when PUNCTUALLY
-        pdf.formatted_text [
-                             {text: 'bei Ihrer Fahrt mit ', styles: []},
-                             {text: train.to_s, styles: [:bold]},
-                             {text: ' ', styles: []},
-                             {text: delaydatetext, styles: [:bold]},
-                             {text: ' ist bei der Ankunft in ', styles: []},
-                             {text: stationname.to_s, styles: [:bold]},
-                             {text: ' keine Verspätung', styles: []},
-                             {text: ' aufgetreten.', styles: []}
-                           ]
+        pdf.text "bei Ihrer Fahrt mit <b>#{train}</b> am <b>#{delaydatetext}</b> nach <b>#{stationname}</b>," +
+                   " planmäßige Ankunft dort um <b>#{delaydatetime} Uhr</b>, ist <b>keine Verspätung</b> aufgetreten.",
+                 inline_format: true
       when UNKNOWN
-        pdf.formatted_text [
-                             {text: 'zu Ihrer Fahrt mit ', styles: []},
-                             {text: train.to_s, styles: [:bold]},
-                             {text: ' ', styles: []},
-                             {text: delaydatetext, styles: [:bold]},
-                             {text: ' liegen uns leider keine Verspätungsdaten mehr vor.', styles: []}
-                           ]
+        pdf.text "zu Ihrer Fahrt mit <b>#{train}</b> am <b>#{delaydatetext}</b> nach <b>#{stationname}</b>," +
+                   " planmäßige Ankunft dort um <b>#{delaydatetime} Uhr</b>, liegen uns leider keine Verspätungsdaten" +
+                   " vor. Bitte wenden Sie sich an Ihr Reisezentrum vor Ort.",
+                 inline_format: true
+      else
+        pdf.text "Leider ist die Erstellung einer Verspätungsbescheinigung derzeit aus technischen Gründen nicht möglich.",
+                 inline_format: true
+        sorry = true
+    end
+    if sorry
+      pdf.move_down 20
+      pdf.text "Wir bitten um Entschuldigung."
     end
     pdf.move_down 20
     pdf.text "Mit freundlichen Grüßen"
@@ -124,23 +131,27 @@ def make_pdf(delay, delayid, stationname, train, delaydate, state)
     pdf.text "Deutsche Bahn AG"
     pdf.text "Kundendialog"
     pdf.move_down 40
-    pdf.text "Auskunfts-ID: #{delayid}, Auskunft erstellt am: #{now.strftime('%d.%m.%Y um %H:%M:%S')}"
+    pdf.text "Auskunfts-ID: <b>#{delayid}</b>, Auskunft erstellt am: #{now.strftime('%d.%m.%Y um %H:%M:%S')} Uhr.",
+             inline_format: true
     pdf.move_down 10
     pdf.text "Disclaimer:"
-    pdf.text "Dieses Dokument wurde im Rahmen des 8. DB Hackathon: Open Data am 15. & 16.12.2017 in Berlin erstellt. Dies ist KEIN offizielles Dokument der Deutschen Bahn AG oder ihrer Tochterunternehmen"
+    pdf.text "Dieses Dokument wurde im Rahmen des 8. DB Hackathon: Open Data am 15. & 16.12.2017 in Berlin erstellt." +
+               " Dies ist KEIN offizielles Dokument der Deutschen Bahn AG oder ihrer Tochterunternehmen"
     pdf.move_down 10
-    pdf.text "This Document has been created during the 8th DB Hackathon: Open Data on 15. & 16.12.2017 in Berlin. This is NOT an official Document of Deutsche Bahn AG or its subsidiaries."
-
-
+    pdf.text "This Document has been created during the 8th DB Hackathon: Open Data on 15. & 16.12.2017 in Berlin." +
+               " This is NOT an official Document of Deutsche Bahn AG or its subsidiaries."
   end
+  attachment('test.pdf', 'application/pdf')
+  pdffile.render
+
 end
 
 set :bind, @@config['listen']
 set :port, @@config['port']
 
-get '/' do
-  File.read('index.html')
-end
+#get '/' do
+#  File.read('index.html')
+#end
 
 get '/delay/:year/:month/:day/:train/:station' do
   evaid = string2eva(params[:station])
@@ -154,27 +165,37 @@ get '/delay/:year/:month/:day/:train/:station' do
   data = get_from_api(year,month,day,trainno,evaid)
   if data['date'].nil?
     # no data in json (unknown)
-    state = UNKNOWN
+    delaystate = UNKNOWN
+    delay = 0
+    carrival = Time.new(year, month, day)
   else
+    delaystate = DELAYED
     train = data['trainCategory'] + " " + data['trainNumber']
     pa = data['planned']['arrival']
     parrival = Time.new(pa[0],pa[1],pa[2],pa[3],pa[4])
     ca= if !data['changed'].nil?
-           data['changed']['arrival']
+          data['changed']['arrival']
         else
-           data['planned']['arrival']
-       end
+          data['planned']['arrival']
+        end
     #ca = data['changed']['arrival']
     carrival = Time.new(ca[0],ca[1],ca[2],ca[3],ca[4])
     puts parrival
     puts carrival
     delay = ((carrival - parrival) / 60).ceil
-    if delay != 0
-      state = DELAYED
-    else
-      state = PUNCTUALLY
+    case delay
+      when "C"
+        delaystate = CANCELLED
+      when  0 .. INFINITY
+        if Time.now < carrival
+          delaystate = PROGNOSED
+        else
+          delaystate = DELAYED
+        end
+      else
+        delaystate = PUNCTUALLY
     end
-    puts delay
+    puts delaystate / delay
 
   end
   now = Time.now.iso8601
@@ -186,10 +207,11 @@ get '/delay/:year/:month/:day/:train/:station' do
   item = {
     delayid: delayid,
     delay: delay,
-    delaydate: carrival.to_s,
+    delaydate: parrival.to_s,
     station: evaid,
     train: train,
-    state: state.to_s
+    state: delaystate.to_i,
+    timestamp: Time.now.to_i
   }
   dbparams = {
     table_name: 'DBHackathon8Delay',
@@ -216,34 +238,42 @@ get '/delay/:train/:station' do
   month = Time.now.month
   year = Time.now.year
 
- redirect "/delay/#{year}/#{month}/#{day}/#{params[:train]}/#{params[:station]}"
+  redirect "/delay/#{year}/#{month}/#{day}/#{params[:train]}/#{params[:station]}"
 
 end
 
 def get_from_api(year,month,day,train,evaid)
-    jsondata = '{}'
-    request = HTTPI::Request.new
-    request.url = "https://4m0gbu7t6j.execute-api.eu-central-1.amazonaws.com/prod/#{year}/#{month}/#{day}/#{train}/#{evaid}"
-    request.headers["Accept"] = "application/json"
-    response = HTTPI.get(request)
-    jsondata = JSON.parse(response.body) if response.body.length > 2
+  jsondata = '{}'
+  request = HTTPI::Request.new
+  request.url = "https://4m0gbu7t6j.execute-api.eu-central-1.amazonaws.com/prod/#{year}/#{month}/#{day}/#{train}/#{evaid}"
+  request.headers["Accept"] = "application/json"
+  response = HTTPI.get(request)
+  jsondata = JSON.parse(response.body) if response.body.length > 2
   jsondata
 end
 
 
 
-get '/db/:year/:month/:day/:type/:train/:station/:delay' do
+get '/db/:year/:month/:day/:hour/:minute/:type/:train/:station/:delay' do
   evaid = string2eva(params[:station])
   day = params[:day]
   month = params[:month]
   year = params[:year]
+  hour = params[:hour]
+  minute = params[:minute]
+
   delay = params[:delay]
 
-  if delay.to_i > 0
-    state = :delayed
-  else
-    state = :punctually
-  end
+  delaystate = case delay
+                 when delay == "C"
+                   CANCELLED
+                   delay=-1
+                 when delay.to_i > 0
+                   DELAYED
+                 else
+                   PUNCTUALLY
+                   delay=0
+                 end
 
   train = params[:type] + " " + params[:train]
   trainno = train.gsub(/[^0-9]/, '')
@@ -256,10 +286,11 @@ get '/db/:year/:month/:day/:type/:train/:station/:delay' do
   item = {
     delayid: delayid,
     delay: delay,
-    delaydate: Date.parse("#{year}-#{month}-#{day}").to_s,
+    delaydate: Date.parse("#{year}-#{month}-#{day} #{hour}:#{minute}:00").to_s,
     station: evaid,
     train: train,
-    state: state
+    state: delaystate,
+    timestamp: Time.now.to_i
   }
   dbparams = {
     table_name: 'DBHackathon8Delay',
@@ -285,39 +316,39 @@ get '/pdf/:id' do
   #  get data from DB and re-create pdf
   now = Time.now.iso8601
   dynamodb = Aws::DynamoDB::Client.new(region: 'eu-central-1')
-
-
   params1 = {
     table_name: 'DBHackathon8Delay',
     key: {
-      delayid: params[:id],
+      delayid: params[:id]
     }
   }
-
   begin
     result = dynamodb.get_item(params1)
-
     if result.item.nil?
       puts 'Could not find delay'
       halt 404
-      #exit 0
-
-      if result.item['state'].nil?
-        state = DELAYED
-      else
-        state = result.item['state']
-      end
-    #pp result.item['train']
-
-
-    stationname = eva2string(result.item['station'].to_i.to_s)
-
-    pdffile = make_pdf(result.item['delay'], result.item['delayid'], stationname, result.item['train'], result.item['delaydate'],state)
-
-    x = pdffile.render
-    attachment('test.pdf','application/pdf')
-    x
-
+    else
+      delaystate = if result.item['state'].nil?
+                     DELAYED
+                   else
+                     result.item['state']
+                   end
+      stationname = eva2string(result.item['station'].to_i.to_s)
+      timestamp = if result.item['timestamp'].nil?
+                    Time.now.to_i
+                  else
+                    result.item['timestamp'].to_i
+                  end
+      pp result.item
+      make_pdf(
+        result.item['delay'],
+        result.item['delayid'],
+        stationname,
+        result.item['train'],
+        result.item['delaydate'],
+        delaystate,
+        timestamp
+      )
     end
   end
 end

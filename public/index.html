@@ -14,14 +14,13 @@
             var month = datum.substr(3,2);
             var day = datum.substr(0,2);
 
-            var url = "http://delayon.nodoma.in:8000/delay/" + year + "/" + month + "/" + day + "/" + train + "/" + bf + "?pdf=true";
+            var url = "http://"+ location.host +"/delay/" + year + "/" + month + "/" + day + "/" + train + "/" + bf + "?pdf=true";
 
             location.href = url;
         }
         function test2() {
             var delayid = document.forms["testform_get"]["delayid"].value;
-
-            var url = "http://delayon.nodoma.in:8000/pdf/" + delayid;
+            var url = "http://"+ location.host + "/pdf/" + delayid;
 
             location.href = url;
         }
